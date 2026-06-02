@@ -29,21 +29,32 @@ builder.Services
 builder.Services.AddJobNetInfrastructure(builder.Configuration);
 builder.Services.AddJobNetJwtAuth(builder.Configuration);
 
-// ---- CORS for the React frontend (Vite dev + preview, any local port) ----
+// ---- CORS for the React frontend (Vite dev + preview + deployed frontend) ----
 const string CorsPolicy = "JobNetFrontend";
+
+// Production frontend origins are read from configuration so we never need to
+// recompile to add one. Set them in appsettings.json:
+//     "Cors": { "AllowedOrigins": [ "https://your-frontend.vercel.app" ] }
+// ...or as an environment variable on the host (e.g. Render):
+//     Cors__AllowedOrigins__0 = https://your-frontend.vercel.app
+//     Cors__AllowedOrigins__1 = https://www.yourdomain.com
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
 builder.Services.AddCors(o =>
 {
     o.AddPolicy(CorsPolicy, p => p
         .SetIsOriginAllowed(origin =>
         {
-            // Allow any localhost / 127.0.0.1 origin so Vite is free to fall
-            // back to 5174, 5175, etc. when 5173 is already in use.
             if (string.IsNullOrEmpty(origin)) return false;
-            if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-            {
-                return uri.Host is "localhost" or "127.0.0.1";
-            }
-            return false;
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+
+            // 1) Always allow local development on any port (localhost / 127.0.0.1).
+            if (uri.Host is "localhost" or "127.0.0.1") return true;
+
+            // 2) Allow any origin explicitly listed in configuration.
+            return allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
         })
         .AllowAnyHeader()
         .AllowAnyMethod()
