@@ -1,0 +1,17 @@
+# Keep the build context small and the image clean.
+**/bin
+**/obj
+**/.vs
+**/.vscode
+.git
+.github
+*.user
+*.suo
+
+# Local-only assets that should never go into the image
+database
+tools
+docker-compose.yml
+Dockerfile
+README.md
+**/*.md
