@@ -1,0 +1,41 @@
+version: "3.9"
+
+# Local databases for the Jobnet backend.
+#   - SQL Server: transactional business data (users, jobs, applications, reviews, ...)
+#   - MongoDB:    audit logs and domain events
+#
+# Start everything with:    docker compose up -d
+# Stop and remove volumes:  docker compose down -v
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: jobnet-sqlserver
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "JobNet!Pass1"
+      MSSQL_PID: "Developer"
+    volumes:
+      - jobnet_sqldata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P JobNet!Pass1 -Q 'SELECT 1' || exit 1"]
+      interval: 15s
+      retries: 10
+      start_period: 30s
+
+  mongo:
+    image: mongo:7
+    container_name: jobnet-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - jobnet_mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 15s
+      retries: 10
+
+volumes:
+  jobnet_sqldata:
+  jobnet_mongodata:

@@ -1,0 +1,6 @@
+@JobNet.Api_HostAddress = http://localhost:5163
+
+GET {{JobNet.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

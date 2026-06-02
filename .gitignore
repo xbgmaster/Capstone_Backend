@@ -1,0 +1,15 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+*.log
+
+## Rider
+.idea/
+
+## Local dev databases
+*.mdf
+*.ldf
