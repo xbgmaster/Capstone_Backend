@@ -18,10 +18,29 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddJobNetInfrastructure(this IServiceCollection services, IConfiguration config)
     {
-        // ---- SQL Server (EF Core) ----
-        var sqlConn = config.GetConnectionString("SqlServer")
-                      ?? throw new InvalidOperationException("Missing ConnectionStrings:SqlServer");
-        services.AddDbContext<JobNetDbContext>(opts => opts.UseSqlServer(sqlConn));
+        // ---- Relational database (EF Core) - provider selectable by config ----
+        // "Database:Provider" = "SqlServer" (default) or "Postgres".
+        //   SqlServer -> ConnectionStrings:SqlServer; migrations in JobNet.Infrastructure
+        //   Postgres  -> ConnectionStrings:Postgres;  migrations in JobNet.Migrations.Postgres
+        var dbProvider = (config["Database:Provider"] ?? "SqlServer").Trim();
+
+        if (dbProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+            dbProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+        {
+            var pgConn = config.GetConnectionString("Postgres")
+                         ?? throw new InvalidOperationException("Missing ConnectionStrings:Postgres");
+            services.AddDbContext<JobNetDbContext>(opts =>
+                opts.UseNpgsql(pgConn, npg =>
+                    npg.MigrationsAssembly("JobNet.Migrations.Postgres")));
+        }
+        else
+        {
+            var sqlConn = config.GetConnectionString("SqlServer")
+                          ?? throw new InvalidOperationException("Missing ConnectionStrings:SqlServer");
+            // SQL Server migrations stay in this assembly (JobNet.Infrastructure),
+            // the default MigrationsAssembly, so existing databases keep working.
+            services.AddDbContext<JobNetDbContext>(opts => opts.UseSqlServer(sqlConn));
+        }
 
         // ---- MongoDB ----
         services.Configure<MongoSettings>(config.GetSection("Mongo"));

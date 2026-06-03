@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\JobNet.Infrastructure\JobNet.Infrastructure.csproj" />
     <ProjectReference Include="..\JobNet.Domain\JobNet.Domain.csproj" />
+    <ProjectReference Include="..\JobNet.Migrations.Postgres\JobNet.Migrations.Postgres.csproj" />
   </ItemGroup>
 
 </Project>

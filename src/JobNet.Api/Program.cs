@@ -6,6 +6,11 @@ using JobNet.Infrastructure.Persistence.Seeding;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
+// Npgsql maps DateTime to 'timestamp with time zone' and rejects DateTimes
+// whose Kind is Unspecified (the seeder uses some). This legacy switch makes
+// Npgsql behave like SQL Server for timestamps. Harmless when using SQL Server.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ---- Configuration ----
