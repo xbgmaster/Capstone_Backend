@@ -40,16 +40,13 @@ public class AuthService : IAuthService
             return Result.Fail<AuthResponse>("Password must be at least 6 characters.", ErrorCode.Validation);
         if (req.Role != UserRole.Worker && req.Role != UserRole.Employer)
             return Result.Fail<AuthResponse>("You can only register as a Worker or Employer.", ErrorCode.Validation);
-
         var email = req.Email.Trim().ToLowerInvariant();
         if (await _db.Users.AnyAsync(u => u.Email.ToLower() == email, ct))
             return Result.Fail<AuthResponse>("An account with that email already exists.", ErrorCode.Conflict);
-
         var initials = (
             (string.IsNullOrEmpty(req.FirstName) ? "?" : req.FirstName[..1]) +
             (string.IsNullOrEmpty(req.LastName) ? "?" : req.LastName[..1])
         ).ToUpperInvariant();
-
         var user = new User
         {
             Role = req.Role,
@@ -63,14 +60,19 @@ public class AuthService : IAuthService
             Avatar = initials,
             Status = UserStatus.Active,
         };
-
-        _db.Users.Add(user);
-
         if (req.Role == UserRole.Employer)
         {
             if (string.IsNullOrWhiteSpace(req.CompanyName))
                 return Result.Fail<AuthResponse>("Company name is required for employer accounts.", ErrorCode.Validation);
 
+            // BUG-001: Circular Dependency FKs
+            // User and Company reference each other (User.CompanyId -> Company.Id
+            // and Company.OwnerId -> User.Id), so EF can't order them in a single
+            // insert. Persist in stages inside a transaction: user, then company,
+            // then link the user back to the company.
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+            _db.Users.Add(user);
+            await _db.SaveChangesAsync(ct);          // 1) user (CompanyId still null)
             var company = new Company
             {
                 OwnerId = user.Id,
@@ -84,23 +86,24 @@ public class AuthService : IAuthService
                 EmployeeCount = "1-10",
             };
             _db.Companies.Add(company);
+            await _db.SaveChangesAsync(ct);          // 2) company (OwnerId to user)
             user.CompanyId = company.Id;
+            await _db.SaveChangesAsync(ct);          // 3) link user to company
+            await tx.CommitAsync(ct);
         }
         else
         {
+            _db.Users.Add(user);
             _db.WorkerProfiles.Add(new WorkerProfile
             {
                 UserId = user.Id,
                 Headline = req.Headline ?? "New on Jobnet",
                 Availability = "Flexible",
             });
+            await _db.SaveChangesAsync(ct);
         }
-
-        await _db.SaveChangesAsync(ct);
-
         await _audit.LogAsync("User.Registered", "User", user.Id.ToString(),
             metadata: new Dictionary<string, object?> { ["role"] = user.Role.ToString() }, ct: ct);
-
         var (token, expiresAt) = _jwt.IssueToken(user);
         return Result.Ok(new AuthResponse(token, expiresAt, user.ToDto()));
     }
