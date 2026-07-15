@@ -1,6 +1,7 @@
 using System.Text;
 using JobNet.Infrastructure.Auditing;
 using JobNet.Infrastructure.Auth;
+using JobNet.Infrastructure.Email;
 using JobNet.Infrastructure.Mongo;
 using JobNet.Infrastructure.Persistence;
 using JobNet.Infrastructure.Persistence.Seeding;
@@ -51,6 +52,10 @@ public static class DependencyInjection
         services.Configure<JwtSettings>(config.GetSection("Jwt"));
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
+
+        // ---- Email (Brevo transactional API) ----
+        services.Configure<BrevoSettings>(config.GetSection("Brevo"));
+        services.AddHttpClient<IEmailSender, BrevoEmailSender>();
 
         // ---- HTTP context / current user ----
         services.AddHttpContextAccessor();

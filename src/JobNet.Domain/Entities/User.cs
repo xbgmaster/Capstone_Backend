@@ -17,6 +17,10 @@ public class User
     public UserStatus Status { get; set; } = UserStatus.Active;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    // Password reset (email flow). We store only a hash of the one-time token, never the raw token.
+    public string? PasswordResetTokenHash { get; set; }
+    public DateTime? PasswordResetTokenExpiresAt { get; set; }
+
     public Guid? CompanyId { get; set; }
     public Company? Company { get; set; }
 

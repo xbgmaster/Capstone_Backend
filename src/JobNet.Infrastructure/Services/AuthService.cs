@@ -4,9 +4,15 @@ using JobNet.Infrastructure.Auditing;
 using JobNet.Infrastructure.Auth;
 using JobNet.Infrastructure.Common;
 using JobNet.Infrastructure.Contracts;
+using JobNet.Infrastructure.Email;
 using JobNet.Infrastructure.Mapping;
 using JobNet.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace JobNet.Infrastructure.Services;
 
@@ -15,21 +21,31 @@ public interface IAuthService
     Task<Result<AuthResponse>> RegisterAsync(RegisterRequest req, CancellationToken ct = default);
     Task<Result<AuthResponse>> LoginAsync(LoginRequest req, CancellationToken ct = default);
     Task<Result<UserDto>> GetMeAsync(Guid userId, CancellationToken ct = default);
+    Task ForgotPasswordAsync(string email, CancellationToken ct = default);
+    Task ResetPasswordAsync(ResetPasswordDto dto, CancellationToken ct = default);
 }
 
 public class AuthService : IAuthService
 {
+    private static readonly TimeSpan ResetTokenLifetime = TimeSpan.FromHours(1);
+
     private readonly JobNetDbContext _db;
     private readonly IPasswordHasher _hasher;
     private readonly IJwtTokenService _jwt;
     private readonly IAuditLogger _audit;
+    private readonly IEmailSender _email;
+    private readonly BrevoSettings _brevo;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(JobNetDbContext db, IPasswordHasher hasher, IJwtTokenService jwt, IAuditLogger audit)
+    public AuthService(JobNetDbContext db, IPasswordHasher hasher, IJwtTokenService jwt, IAuditLogger audit, IEmailSender email, IOptions<BrevoSettings> brevo, ILogger<AuthService> logger)
     {
         _db = db;
         _hasher = hasher;
         _jwt = jwt;
         _audit = audit;
+        _email = email;
+        _brevo = brevo.Value;
+        _logger = logger;
     }
 
     public async Task<Result<AuthResponse>> RegisterAsync(RegisterRequest req, CancellationToken ct = default)
@@ -138,4 +154,98 @@ public class AuthService : IAuthService
         if (user is null) return Result.Fail<UserDto>("User not found.", ErrorCode.NotFound);
         return Result.Ok(user.ToDto());
     }
+
+    public async Task ForgotPasswordAsync(string email, CancellationToken ct = default)
+    {
+        var normalized = (email ?? string.Empty).Trim().ToLowerInvariant();
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized, ct);
+
+        // Always behave the same way regardless of whether the account exists, so we
+        // don't leak which emails are registered. Only send a real email when it does.
+        if (user is not null && user.Status != UserStatus.Suspended)
+        {
+            var rawToken = GenerateToken();
+            user.PasswordResetTokenHash = HashToken(rawToken);
+            user.PasswordResetTokenExpiresAt = DateTime.UtcNow.Add(ResetTokenLifetime);
+            await _db.SaveChangesAsync(ct);
+
+            var link = BuildResetLink(user.Email, rawToken);
+            var html = BuildResetEmailHtml(user.FirstName, link);
+
+            try
+            {
+                await _email.SendAsync(user.Email, $"{user.FirstName} {user.LastName}".Trim(),
+                    "Reset your Jobnet password", html, ct);
+                await _audit.LogAsync("Auth.PasswordResetRequested", "User", user.Id.ToString(), ct: ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send password reset email to {Email}.", user.Email);
+            }
+        }
+    }
+
+    public async Task ResetPasswordAsync(ResetPasswordDto dto, CancellationToken ct = default)
+    {
+        var normalized = (dto.Email ?? string.Empty).Trim().ToLowerInvariant();
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized, ct);
+
+        // Generic error so we don't reveal whether the email exists or which part failed.
+        if (user is null
+            || string.IsNullOrEmpty(user.PasswordResetTokenHash)
+            || user.PasswordResetTokenExpiresAt is null
+            || user.PasswordResetTokenExpiresAt < DateTime.UtcNow
+            || !TokensMatch(user.PasswordResetTokenHash, dto.Token))
+        {
+            throw new ValidationException("Invalid or expired reset link.");
+        }
+
+        user.PasswordHash = _hasher.Hash(dto.NewPassword);
+        user.PasswordResetTokenHash = null;
+        user.PasswordResetTokenExpiresAt = null;
+        await _db.SaveChangesAsync(ct);
+
+        await _audit.LogAsync("Auth.PasswordReset", "User", user.Id.ToString(), ct: ct);
+        _logger.LogInformation("Password successfully reset for {Email}.", user.Email);
+    }
+
+    private static string GenerateToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes)
+            .Replace("+", "-").Replace("/", "_").TrimEnd('=');
+    }
+
+    private static string HashToken(string rawToken)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(rawToken));
+        return Convert.ToBase64String(hash);
+    }
+
+    private static bool TokensMatch(string storedHash, string providedToken)
+    {
+        if (string.IsNullOrEmpty(providedToken)) return false;
+        var providedHash = HashToken(providedToken);
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(storedHash), Encoding.UTF8.GetBytes(providedHash));
+    }
+
+    private string BuildResetLink(string email, string rawToken)
+    {
+        var baseUrl = _brevo.AppBaseUrl.TrimEnd('/');
+        return $"{baseUrl}/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(rawToken)}";
+    }
+
+    private static string BuildResetEmailHtml(string firstName, string link) => $@"
+<div style=""font-family:Segoe UI,Arial,sans-serif;font-size:15px;color:#1f2937"">
+  <p>Hi {System.Net.WebUtility.HtmlEncode(firstName)},</p>
+  <p>We received a request to reset your Jobnet password. Click the button below to choose a new one. This link expires in 1 hour.</p>
+  <p style=""margin:24px 0"">
+    <a href=""{link}"" style=""background:#2563eb;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none"">Reset password</a>
+  </p>
+  <p>If the button doesn't work, copy and paste this link into your browser:</p>
+  <p><a href=""{link}"">{link}</a></p>
+  <p>If you didn't request this, you can safely ignore this email.</p>
+  <p>— The Jobnet team</p>
+</div>";
 }

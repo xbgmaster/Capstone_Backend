@@ -13,3 +13,7 @@ obj/
 ## Local dev databases
 *.mdf
 *.ldf
+
+## Local secrets / environment-specific config (never commit)
+appsettings.Development.json
+appsettings.*.Development.json

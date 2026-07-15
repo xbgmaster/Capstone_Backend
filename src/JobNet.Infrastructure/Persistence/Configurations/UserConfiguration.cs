@@ -21,6 +21,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         b.Property(u => u.Avatar).HasMaxLength(4);
         b.Property(u => u.Role).HasConversion<int>();
         b.Property(u => u.Status).HasConversion<int>();
+        b.Property(u => u.PasswordResetTokenHash).HasMaxLength(200);
 
         b.HasOne(u => u.Company)
             .WithMany()

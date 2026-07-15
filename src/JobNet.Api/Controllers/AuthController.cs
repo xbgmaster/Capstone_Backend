@@ -37,12 +37,22 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Stub for forgot-password to match the frontend flow. A real implementation would
-    /// generate a one-time token, persist it, and send an email via SendGrid/SES.
+    /// Generates a one-time reset token, stores its hash, and emails a reset link via Brevo.
+    /// Always returns the same response so we don't reveal whether the email is registered.
     /// </summary>
     [HttpPost("forgot-password")]
-    public IActionResult ForgotPassword([FromBody] ForgotPasswordRequest req)
-        => Ok(new { ok = true, message = "If an account exists, a reset link has been emailed." });
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req, CancellationToken ct)
+    {
+        await _auth.ForgotPasswordAsync(req.Email, ct);
+        return Ok(new { ok = true, message = "If an account exists, a reset link has been emailed." });
+    }
 
     public record ForgotPasswordRequest(string Email);
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto, CancellationToken ct)
+    {
+        await _auth.ResetPasswordAsync(dto, ct);
+        return Ok(new { message = "Your password has been reset. You can now sign in." });
+    }
 }
