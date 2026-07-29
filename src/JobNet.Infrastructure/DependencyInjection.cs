@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationService, ApplicationService>();
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<IAdminReportsService, AdminReportsService>();
 
         // ---- Seeder ----

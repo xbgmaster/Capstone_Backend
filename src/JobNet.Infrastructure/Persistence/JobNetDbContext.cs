@@ -18,6 +18,7 @@ public class JobNetDbContext : DbContext
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Message> Messages => Set<Message>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

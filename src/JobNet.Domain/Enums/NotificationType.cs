@@ -6,4 +6,5 @@ public enum NotificationType
     Status = 1,
     Review = 2,
     System = 3,
+    Message = 4,
 }

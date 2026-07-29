@@ -46,4 +46,16 @@ public static class Mapper
 
     public static NotificationDto ToDto(this Notification n) => new(
         n.Id, n.UserId, n.Type, n.Title, n.Message, n.Link, n.Read, n.CreatedAt);
+
+    public static MessageDto ToDto(this Message m) => new(
+        m.Id,
+        m.SenderId,
+        m.Sender is null ? string.Empty : $"{m.Sender.FirstName} {m.Sender.LastName}".Trim(),
+        m.RecipientId,
+        m.Recipient is null ? string.Empty : $"{m.Recipient.FirstName} {m.Recipient.LastName}".Trim(),
+        m.JobId,
+        m.Job?.Title,
+        m.Body,
+        m.Read,
+        m.CreatedAt);
 }
