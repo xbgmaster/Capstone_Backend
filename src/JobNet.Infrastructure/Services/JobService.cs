@@ -140,12 +140,18 @@ public class JobService : IJobService
         job.PaymentType = req.PaymentType;
         job.PaymentAmount = req.PaymentAmount;
 
+        // Replace the skill rows. We must explicitly Add the new ones: assigning
+        // them only through the navigation makes EF treat their client-generated
+        // Ids (JobSkill.Id has a Guid.NewGuid() initializer + ValueGeneratedOnAdd)
+        // as existing rows and emit UPDATEs that affect 0 rows -> DbUpdateConcurrencyException.
         _db.JobSkills.RemoveRange(job.SkillsRequired);
-        job.SkillsRequired = (req.SkillsRequired ?? Array.Empty<string>())
+        var newSkills = (req.SkillsRequired ?? Array.Empty<string>())
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(s => new JobSkill { JobId = job.Id, Name = s.Trim() })
             .ToList();
+        _db.JobSkills.AddRange(newSkills);
+        job.SkillsRequired = newSkills;
 
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("Job.Updated", "Job", job.Id.ToString(), ct: ct);
